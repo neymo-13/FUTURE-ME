@@ -41,7 +41,7 @@ int Window::initialise()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    mainWindow = glfwCreateWindow(width, height, "OpenGL Starter", nullptr, nullptr);
+    mainWindow = glfwCreateWindow(width, height, "FUTURE ME", nullptr, nullptr);
 
     if (mainWindow == nullptr)
     {
