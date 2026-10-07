@@ -43,7 +43,7 @@ uniform sampler2D texture2D;
 
 vec3 ambientLight()
 {
-    float ambientStrength = 0.2f;
+    float ambientStrength = 0.5f;
     vec3 ambient = lightColour * ambientStrength;
 
     return ambient;
@@ -63,13 +63,26 @@ vec3 CalcPointLight(PointLight light, vec3 norm, vec3 fragPos, vec3 viewDir)
 
 void main()
 {
-    vec3 norm = normalize(Normal);
+    vec3 norm    = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
 
+    // รวมแสง
     vec3 lighting = ambientLight() + CalcDirLight(dirLight, norm, viewDir);
     for (int i = 0; i < numPointLights && i < 4; i++)
         lighting += CalcPointLight(pointLights[i], norm, FragPos, viewDir);
 
+    // Texture (แปลง sRGB → linear เพื่อ gamma correction)
     vec4 texColour = texture(texture2D, TexCoord);
-    colour = vec4(mix(texColour.rgb * lighting, texColour.rgb, emissiveStrength), texColour.a);
+    vec3 texLinear = pow(texColour.rgb, vec3(2.2));
+
+    // ผลลัพธ์
+    vec3 result = texLinear * lighting;
+
+    // แปลงกลับ linear → sRGB
+    result = pow(result, vec3(1.0 / 2.2));
+
+    // ถ้า emissiveStrength > 0 ให้ผสมกับสี texture ตรงๆ (glow)
+    result = mix(result, texColour.rgb, emissiveStrength);
+
+    colour = vec4(result, texColour.a);
 }
