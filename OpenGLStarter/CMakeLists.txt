@@ -9,6 +9,7 @@ find_package(OpenGL REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glew CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 
 # Generate an absolute shader directory for this clone. The program can then
 # find shaders regardless of the working directory chosen by VS Code/VS/CMake.
@@ -21,6 +22,9 @@ configure_file(
 
 add_executable(OpenGLStarter
   src/main.cpp
+  src/SceneUtils.cpp
+  src/CampScene.cpp
+  src/DeskScene.cpp
   src/Libs/Mesh.cpp
   src/Libs/Shader.cpp
   src/Libs/Window.cpp
@@ -30,6 +34,7 @@ target_include_directories(OpenGLStarter PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Libs
   ${CMAKE_CURRENT_BINARY_DIR}/generated
+  ${Stb_INCLUDE_DIR}
 )
 
 target_link_libraries(OpenGLStarter PRIVATE
