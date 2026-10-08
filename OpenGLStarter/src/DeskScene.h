@@ -5,12 +5,11 @@
 
 #include "Libs/Shader.h"
 
-// Person B: folding table, laptop + screen, mug, photo frame, snowman
+// Table, laptop, mug, photo frame, snowman, RV windows
 void CreateDeskScene();
 void RenderDeskScene(Shader* shader, GLuint uniformModel);
 
-// Person B's point lights (pointLights[2] = laptop screen, [3] = RV windows).
-// Call before drawing any scene.
+// Point lights 2-3, call before drawing
 void SetDeskLights(Shader* shader);
 
 #endif

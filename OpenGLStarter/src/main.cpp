@@ -22,7 +22,7 @@
 const GLint WIDTH  = 800;
 const GLint HEIGHT = 600;
 
-const int NUM_POINT_LIGHTS = 4;   // 0-1 campfire (A), 2 laptop screen (B), 3 RV windows (B)
+const int NUM_POINT_LIGHTS = 4;   // 0-1 campfire, 2 laptop screen, 3 RV windows
 
 std::vector<Mesh*>   meshList;
 std::vector<Shader*> shaderList;
@@ -40,14 +40,14 @@ float     pitch       =  1.0f;
 float     fov         = 60.0f;
 bool      lookingBack = false;
 
-// Locked view for the final screenshot (Person B): seated at the laptop, P toggles
+// Locked view at the laptop, P toggles
 bool            cameraLocked = false;
 const glm::vec3 LOCK_POS     = glm::vec3(8.5f, 1.23f, -8.0f);
-const float     LOCK_YAW     = 176.0f;
+const float     LOCK_YAW     = 176.5f;
 const float     LOCK_PITCH   = 0.0f;
 const float     LOCK_FOV     = 63.0f;
 
-// Free-camera view saved when P locks, restored when P unlocks
+// View to return to when unlocking
 glm::vec3 savedPos;
 float     savedYaw, savedPitch, savedFov;
 
@@ -160,8 +160,7 @@ int main()
     CreateShaders();
     CreateCampScene();
     CreateDeskScene();
-    // Start seated at the laptop (locked). The saved view is the same spot,
-    // so the first P unlocks and lets you walk around from here.
+    // Start in the locked view
     ApplyLockedView();
     savedPos   = cameraPos;
     savedYaw   = yaw;
