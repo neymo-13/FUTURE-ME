@@ -22,7 +22,7 @@
 const GLint WIDTH  = 800;
 const GLint HEIGHT = 600;
 
-const int NUM_POINT_LIGHTS = 2;
+const int NUM_POINT_LIGHTS = 3;   // 0-1 campfire (A), 2 laptop screen (B)
 
 std::vector<Mesh*>   meshList;
 std::vector<Shader*> shaderList;
@@ -40,6 +40,31 @@ float     pitch       =  1.0f;
 float     fov         = 60.0f;
 bool      lookingBack = false;
 
+// Locked view for the final screenshot (Person B): seated at the laptop, P toggles
+bool            cameraLocked = false;
+const glm::vec3 LOCK_POS     = glm::vec3(8.5f, 1.23f, -8.0f);
+const float     LOCK_YAW     = 176.0f;
+const float     LOCK_PITCH   = 0.0f;
+const float     LOCK_FOV     = 63.0f;
+
+// Free-camera view saved when P locks, restored when P unlocks
+glm::vec3 savedPos;
+float     savedYaw, savedPitch, savedFov;
+
+void ApplyLockedView()
+{
+    savedPos   = cameraPos;
+    savedYaw   = yaw;
+    savedPitch = pitch;
+    savedFov   = fov;
+
+    cameraPos   = LOCK_POS;
+    yaw         = LOCK_YAW;
+    pitch       = LOCK_PITCH;
+    fov         = LOCK_FOV;
+    lookingBack = false;
+}
+
 double lastX = WIDTH / 2.0;
 double lastY = HEIGHT / 2.0;
 const float MOUSE_SENSITIVITY = 0.15f;
@@ -52,6 +77,19 @@ void KeyCallback(GLFWwindow* window, int key, int, int action, int)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     if (key == GLFW_KEY_B && action == GLFW_PRESS)
         lookingBack = !lookingBack;
+    if (key == GLFW_KEY_P && action == GLFW_PRESS)
+    {
+        cameraLocked = !cameraLocked;
+        if (cameraLocked)
+            ApplyLockedView();
+        else
+        {
+            cameraPos = savedPos;
+            yaw       = savedYaw;
+            pitch     = savedPitch;
+            fov       = savedFov;
+        }
+    }
 }
 
 void MouseCallback(GLFWwindow*, double xpos, double ypos)
@@ -60,6 +98,7 @@ void MouseCallback(GLFWwindow*, double xpos, double ypos)
     float yoffset = (float)(lastY - ypos) * MOUSE_SENSITIVITY;
     lastX = xpos;
     lastY = ypos;
+    if (cameraLocked) return;
     yaw   += xoffset;
     pitch += yoffset;
     if (pitch >  89.0f) pitch =  89.0f;
@@ -68,6 +107,7 @@ void MouseCallback(GLFWwindow*, double xpos, double ypos)
 
 void ScrollCallback(GLFWwindow*, double, double yoffset)
 {
+    if (cameraLocked) return;
     fov -= (float)yoffset * 2.0f;
     if (fov <  15.0f) fov =  15.0f;
     if (fov > 120.0f) fov = 120.0f;
@@ -120,6 +160,14 @@ int main()
     CreateShaders();
     CreateCampScene();
     CreateDeskScene();
+    // Start seated at the laptop (locked). The saved view is the same spot,
+    // so the first P unlocks and lets you walk around from here.
+    ApplyLockedView();
+    savedPos   = cameraPos;
+    savedYaw   = yaw;
+    savedPitch = pitch;
+    savedFov   = fov;
+    cameraLocked = true;
 
     const glm::vec3 worldUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -148,19 +196,22 @@ int main()
         glm::vec3 flatForward = glm::normalize(
             glm::vec3(cameraDirection.x, 0.0f, cameraDirection.z));
 
-        if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS)
-            cameraPos += flatForward * MOVE_SPEED * deltaTime;
-        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
-            cameraPos -= flatForward * MOVE_SPEED * deltaTime;
-        if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS)
-            cameraPos -= cameraRight * MOVE_SPEED * deltaTime;
-        if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS)
-            cameraPos += cameraRight * MOVE_SPEED * deltaTime;
+        if (!cameraLocked)
+        {
+            if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS)
+                cameraPos += flatForward * MOVE_SPEED * deltaTime;
+            if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
+                cameraPos -= flatForward * MOVE_SPEED * deltaTime;
+            if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS)
+                cameraPos -= cameraRight * MOVE_SPEED * deltaTime;
+            if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS)
+                cameraPos += cameraRight * MOVE_SPEED * deltaTime;
 
-        if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
-            cameraPos.y += MOVE_SPEED * deltaTime;
-        if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-            cameraPos.y -= MOVE_SPEED * deltaTime;
+            if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
+                cameraPos.y += MOVE_SPEED * deltaTime;
+            if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+                cameraPos.y -= MOVE_SPEED * deltaTime;
+        }
 
         // ---------- Clear ----------
         glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
@@ -215,6 +266,7 @@ int main()
 
         // Point Light — ดวงที่ 2 (แสงกระจายรอบๆ)
         SetPointLight(shader, 1, glm::vec3(4.5f, 2.0f, -9.8f), glm::vec3(1.0f, 0.4f, 0.1f), 1.0f, 0.09f, 0.032f);
+        SetDeskLights(shader);
         // texture
         glUniform1i(shader->GetUniformLocation("texture2D"), 0);
         glActiveTexture(GL_TEXTURE0);

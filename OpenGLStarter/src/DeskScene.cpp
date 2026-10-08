@@ -12,10 +12,20 @@
 // Scene faces -X (camera forward), right of the image is -Z. Units are metres, ground y = 0.
 // Move DESK_POS to move the whole desk set; other positions are offsets from it.
 const float TABLE_TOP_Y = 0.78f;    // top surface of the table model
-const glm::vec3 DESK_POS   = glm::vec3(4.6f, 0.0f, -6.9f);
+// Placed so the campfire is ahead-right and the RV ahead-left from the locked camera (main.cpp)
+const glm::vec3 DESK_POS   = glm::vec3(7.8f, 0.0f, -8.25f);
 const glm::vec3 LAPTOP_POS = DESK_POS + glm::vec3(-0.05f, TABLE_TOP_Y,  0.25f);
-const glm::vec3 MUG_POS    = DESK_POS + glm::vec3( 0.0f,  TABLE_TOP_Y, -0.3f);
-const glm::vec3 TABLET_POS = DESK_POS + glm::vec3(-0.3f,  TABLE_TOP_Y,  0.6f);
+const glm::vec3 MUG_POS    = DESK_POS + glm::vec3(-0.15f, TABLE_TOP_Y, -0.2f);
+const glm::vec3 FRAME_POS  = DESK_POS + glm::vec3(-0.3f,  TABLE_TOP_Y,  0.6f);
+
+// Standing photo frame (metres): photo 12 x 16 cm (3:4), border, leaning back
+const float FRAME_PHOTO_W = 0.12f;
+const float FRAME_PHOTO_H = 0.16f;
+const float FRAME_BORDER  = 0.012f;
+const float FRAME_DEPTH   = 0.012f;
+const float FRAME_LEAN    = 12.0f;   // degrees
+const float FRAME_TURN    = 19.0f;   // degrees about Y, so it faces the seated camera
+const glm::vec3 SNOWMAN_POS = glm::vec3(5.86f, 0.0f, -6.0f);  // on the snow, left of the desk
 
 // Models in Models/ are split per colour and scaled to metres, origin at bottom centre.
 struct Part
@@ -25,10 +35,15 @@ struct Part
     float emissive;
 };
 
-static std::vector<Part> g_Table, g_Laptop, g_Mug, g_Tablet;
+static std::vector<Part> g_Table, g_Laptop, g_Mug, g_Snowman;
 
 static Mesh*  g_Box      = nullptr;
 static GLuint g_WhiteTex = 0;
+
+static Mesh*  g_ScreenQuad = nullptr;
+static GLuint g_ScreenTex  = 0;
+static Mesh*  g_PhotoQuad  = nullptr;
+static GLuint g_PhotoTex   = 0;
 
 static bool HasFile(const char* dir, const char* name)
 {
@@ -93,26 +108,81 @@ static void DrawBox(Shader* shader, GLuint uniformModel, glm::mat4 base,
     Draw(g_Box, uniformModel, model);
 }
 
+// Screen quad built from our own 4 vertices (P3 N3 UV2 = 8 floats each).
+// Corners are given as seen by the viewer, so the image is upright on screen.
+static Mesh* CreateQuad(glm::vec3 bl, glm::vec3 br, glm::vec3 tr, glm::vec3 tl, glm::vec3 n)
+{
+    GLfloat vertices[] =
+    {
+        //  x     y     z       nx   ny   nz     u     v
+        bl.x, bl.y, bl.z,    n.x, n.y, n.z,   0.0f, 0.0f,   // bottom-left
+        br.x, br.y, br.z,    n.x, n.y, n.z,   1.0f, 0.0f,   // bottom-right
+        tr.x, tr.y, tr.z,    n.x, n.y, n.z,   1.0f, 1.0f,   // top-right
+        tl.x, tl.y, tl.z,    n.x, n.y, n.z,   0.0f, 1.0f,   // top-left
+    };
+    unsigned int indices[] = { 0, 1, 2,   0, 2, 3 };
+
+    Mesh* quad = new Mesh();
+    quad->CreateMesh(vertices, indices, 32, 6);
+    meshList.push_back(quad);
+    return quad;
+}
+
+// Laptop screen, matching the screen of laptop_body.obj (laptop-local metres).
+// The lid leans back, so the top edge sits further -X; it faces +X (the camera).
+// Viewed from the camera, image left is +Z and image right is -Z.
+static Mesh* CreateLaptopScreen()
+{
+    const float xBottom = -0.0945f, yBottom = 0.0185f;
+    const float xTop    = -0.1128f, yTop    = 0.2140f;
+    const float halfW   = 0.157f;
+
+    return CreateQuad(glm::vec3(xBottom, yBottom,  halfW), glm::vec3(xBottom, yBottom, -halfW),
+                      glm::vec3(xTop,    yTop,    -halfW), glm::vec3(xTop,    yTop,     halfW),
+                      glm::vec3(0.9956f, 0.0940f, 0.0f));
+}
+
+// Photo inside the frame, standing upright in frame-local space (the lean is applied later).
+// Frame front face is x = 0 and faces +X; the photo sits 1 mm in front of it, inside the border.
+static Mesh* CreateFramePhoto()
+{
+    const float x      = 0.001f;
+    const float bottom = FRAME_BORDER, top = FRAME_BORDER + FRAME_PHOTO_H;
+    const float half   = FRAME_PHOTO_W / 2.0f;
+
+    return CreateQuad(glm::vec3(x, bottom,  half), glm::vec3(x, bottom, -half),
+                      glm::vec3(x, top,    -half), glm::vec3(x, top,     half),
+                      glm::vec3(1.0f, 0.0f, 0.0f));
+}
+
 void CreateDeskScene()
 {
     g_Box = CreateBox();
     g_WhiteTex = CreateWhiteTexture();
 
     AddPart(g_Table, "table_top.obj",   glm::vec3(0.63f, 0.70f, 0.72f));
-    AddPart(g_Table, "table_frame.obj", glm::vec3(0.19f, 0.09f, 0.06f));
+    // Light wood (the .mtl's dark brown 0.19,0.09,0.06 reflects almost no blue screen light)
+    AddPart(g_Table, "table_frame.obj", glm::vec3(0.55f, 0.42f, 0.32f));
 
-    // laptop_screen.obj is drawn for now; the code-screen quad replaces it in the next step
-    AddPart(g_Laptop, "laptop_body.obj",   glm::vec3(0.184f));
-    AddPart(g_Laptop, "laptop_keys.obj",   glm::vec3(0.04f));
-    AddPart(g_Laptop, "laptop_screen.obj", glm::vec3(0.008f));
+    // The model's own black screen is replaced by g_ScreenQuad
+    AddPart(g_Laptop, "laptop_body.obj", glm::vec3(0.184f));
+    AddPart(g_Laptop, "laptop_keys.obj", glm::vec3(0.04f));
+
+    g_ScreenQuad = CreateLaptopScreen();
+    g_ScreenTex  = LoadTexture("screen_code.png");
 
     AddPart(g_Mug, "mug_outer.obj",  glm::vec3(0.698f, 0.106f, 0.106f));
     AddPart(g_Mug, "mug_inner.obj",  glm::vec3(0.588f));
     AddPart(g_Mug, "mug_coffee.obj", glm::vec3(0.071f, 0.012f, 0.0f));
 
-    AddPart(g_Tablet, "tablet_body.obj",   glm::vec3(0.886f));
-    AddPart(g_Tablet, "tablet_back.obj",   glm::vec3(0.02f));
-    AddPart(g_Tablet, "tablet_screen.obj", glm::vec3(0.435f, 0.969f, 0.988f), 0.5f);
+    g_PhotoQuad = CreateFramePhoto();
+    g_PhotoTex  = LoadTexture("frame_photo.jpg");
+
+    AddPart(g_Snowman, "snowman_body.obj",   glm::vec3(1.0f));
+    AddPart(g_Snowman, "snowman_dark.obj",   glm::vec3(0.06f, 0.10f, 0.13f));
+    AddPart(g_Snowman, "snowman_red.obj",    glm::vec3(1.0f, 0.09f, 0.01f));
+    AddPart(g_Snowman, "snowman_orange.obj", glm::vec3(1.0f, 0.4f, 0.05f));
+    AddPart(g_Snowman, "snowman_brown.obj",  glm::vec3(0.19f, 0.09f, 0.06f));
 }
 
 static void RenderTable(Shader* shader, GLuint uniformModel)
@@ -143,6 +213,10 @@ static void RenderLaptop(Shader* shader, GLuint uniformModel)
     if (!g_Laptop.empty())
     {
         DrawParts(shader, uniformModel, g_Laptop, base);
+
+        // Glowing code screen: emissive 1 shows the texture colour as-is, unaffected by lighting
+        SetSurface(shader, g_ScreenTex, glm::vec3(1.0f), 1.0f);
+        Draw(g_ScreenQuad, uniformModel, base);
         return;
     }
 
@@ -170,19 +244,60 @@ static void RenderMug(Shader* shader, GLuint uniformModel)
             glm::vec3(0.08f, 0.10f, 0.08f), glm::vec3(0.7f, 0.1f, 0.1f));
 }
 
-static void RenderTablet(Shader* shader, GLuint uniformModel)
+// Standing photo frame: red panel + photo, leaning back on a stand behind it
+static void RenderFrame(Shader* shader, GLuint uniformModel)
 {
-    glm::mat4 base = glm::translate(glm::mat4(1.0f), TABLET_POS);
-    base = glm::rotate(base, glm::radians(20.0f), glm::vec3(0, 1, 0));
+    const glm::vec3 red = glm::vec3(0.95f, 0.3f, 0.3f);
+    const float lean = glm::radians(FRAME_LEAN);
 
-    if (!g_Tablet.empty())
-    {
-        DrawParts(shader, uniformModel, g_Tablet, base);
-        return;
-    }
+    // base: on the table, turned to face the camera. Origin = bottom-front edge of the frame.
+    glm::mat4 base = glm::translate(glm::mat4(1.0f), FRAME_POS);
+    base = glm::rotate(base, glm::radians(FRAME_TURN), glm::vec3(0, 1, 0));
 
-    DrawBox(shader, uniformModel, base, glm::vec3(0.0f, 0.005f, 0.0f),
-            glm::vec3(0.215f, 0.01f, 0.25f), glm::vec3(0.1f));
+    // Rotating about Z by +lean tips the frame's top towards -X (away from the camera)
+    glm::mat4 frame = glm::rotate(base, lean, glm::vec3(0, 0, 1));
+
+    const float outerH = FRAME_PHOTO_H + 2.0f * FRAME_BORDER;
+    const float outerW = FRAME_PHOTO_W + 2.0f * FRAME_BORDER;
+    DrawBox(shader, uniformModel, frame, glm::vec3(-FRAME_DEPTH / 2.0f, outerH / 2.0f, 0.0f),
+            glm::vec3(FRAME_DEPTH, outerH, outerW), red);
+
+    // Photo: emissive 1 shows its own colours at full brightness so it reads at night
+    SetSurface(shader, g_PhotoTex, glm::vec3(1.0f), 1.0f);
+    Draw(g_PhotoQuad, uniformModel, frame);
+
+    // Stand: from the frame's back (10 cm up) down to the table behind it
+    glm::vec2 top(-FRAME_DEPTH * cosf(lean) - 0.10f * sinf(lean),
+                  -FRAME_DEPTH * sinf(lean) + 0.10f * cosf(lean));
+    glm::vec2 foot(-0.085f, 0.0f);
+    glm::vec2 d = top - foot;
+    glm::mat4 leg = glm::translate(base, glm::vec3((top + foot) / 2.0f, 0.0f));
+    leg = glm::rotate(leg, atan2f(-d.x, d.y), glm::vec3(0, 0, 1));
+    DrawBox(shader, uniformModel, leg, glm::vec3(0.0f), glm::vec3(0.006f, glm::length(d), 0.03f), red);
+}
+
+static void RenderSnowman(Shader* shader, GLuint uniformModel)
+{
+    if (g_Snowman.empty()) return;
+
+    // Model faces -Z; turn it to face the seated camera
+    glm::mat4 base = glm::translate(glm::mat4(1.0f), SNOWMAN_POS);
+    base = glm::rotate(base, glm::radians(-53.0f), glm::vec3(0, 1, 0));
+    DrawParts(shader, uniformModel, g_Snowman, base);
+}
+
+// Blue glow from the laptop screen: a point light just in front of the screen centre.
+// Attenuation 1 / (constant + linear*d + quadratic*d^2) fades it out within ~2.5 m,
+// so it lights the desk, mug and photo frame but not the far scene.
+void SetDeskLights(Shader* shader)
+{
+    // Screen centre in laptop-local space, pushed 15 cm out along the screen normal (+X)
+    const glm::vec3 screenCentre = glm::vec3(-0.104f, 0.116f, 0.0f);
+    const glm::vec3 lightPos = LAPTOP_POS + screenCentre + glm::vec3(0.15f, 0.0f, 0.0f);
+
+    // The shader has no light intensity, so the colour is scaled up instead (blue x 2.5)
+    const glm::vec3 screenBlue = glm::vec3(0.43f, 0.78f, 1.0f) * 2.5f;
+    SetPointLight(shader, 2, lightPos, screenBlue, 1.0f, 0.35f, 0.44f);
 }
 
 void RenderDeskScene(Shader* shader, GLuint uniformModel)
@@ -190,7 +305,8 @@ void RenderDeskScene(Shader* shader, GLuint uniformModel)
     RenderTable(shader, uniformModel);
     RenderLaptop(shader, uniformModel);
     RenderMug(shader, uniformModel);
-    RenderTablet(shader, uniformModel);
+    RenderFrame(shader, uniformModel);
+    RenderSnowman(shader, uniformModel);
 
     // leave shared uniforms as Person A expects them
     glUniform3fv(shader->GetUniformLocation("tintColor"), 1, glm::value_ptr(glm::vec3(1.0f)));
