@@ -6,6 +6,7 @@
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <GLFW/glfw3.h> 
 
 // ------------------------------------------------------------
 // Objects + Textures
@@ -33,6 +34,21 @@ static Mesh*  g_SnowGround  = nullptr;
 static GLuint g_SnowDiffuse = 0;
 static GLuint g_SnowRough   = 0;
 static GLuint g_SnowNormal  = 0;
+
+// --- ต้นไม้ 1 ---
+static Mesh*  g_Tree1Green = nullptr;
+static Mesh*  g_Tree1White = nullptr;
+static Mesh*  g_Tree1Brown = nullptr;
+static GLuint g_TreeGreenColor = 0;
+static GLuint g_TreeWhiteColor = 0;
+static GLuint g_TreeBrownColor = 0;
+
+// --- ต้นไม้ 2 ---
+static Mesh*  g_Tree2Green = nullptr;
+static Mesh*  g_Tree2White = nullptr;
+static Mesh*  g_Tree2Brown = nullptr;
+
+static Mesh* g_Aurora = nullptr;
 
 // ------------------------------------------------------------
 // Default 1x1 textures
@@ -98,6 +114,18 @@ void CreateCampScene()
     g_SnowRough   = LoadTexture("snow/snow01_roughness_4k.jpg");
     g_SnowNormal  = LoadTexture("snow/snow01_normal_4k.jpg");
 
+	// --- สีต้นไม้ ---
+    g_TreeGreenColor = Make1x1Texture( 60, 120,  50);   // เขียวเข้ม
+    g_TreeWhiteColor = Make1x1Texture(240, 240, 245);   // ขาว (หิมะ)
+    g_TreeBrownColor = Make1x1Texture( 90,  60,  35);   // น้ำตาล (ลำต้น)
+
+    // --- ต้นไม้ 1 ---
+    g_Tree1Green = LoadModelOrBox("tree1_green.obj");
+    g_Tree1White = LoadModelOrBox("tree1_white.obj");
+    g_Tree1Brown = LoadModelOrBox("tree1_brown.obj");
+
+    g_Aurora = CreateBox();
+
     std::cout << "[Camp] RV    mesh=" << g_RV    << " tex=" << g_RVTex << "\n";
     std::cout << "[Camp] Chair albedo=" << g_ChairAlbedo
               << " metal="  << g_ChairMetallic
@@ -105,6 +133,34 @@ void CreateCampScene()
               << " normal=" << g_ChairNormal << "\n";
     std::cout << "[Camp] Mountain rock=" << g_MountainRock
               << " snow=" << g_MountainSnow << std::endl;
+}
+
+void RenderAurora(Shader* shader, const glm::mat4& view, const glm::mat4& projection)
+{
+    if (!g_Aurora) return;
+
+    shader->UseShader();
+
+    glUniformMatrix4fv(shader->GetUniformLocation("view"),       1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(shader->GetUniformLocation("projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    glUniform1f(shader->GetUniformLocation("time"), 0.0f);   // 不移动
+
+    glm::mat4 model = glm::mat4(1.0f);
+
+    model = glm::translate(model, glm::vec3(-200.0f, 80.0f, -15.0f));
+
+    model = glm::scale(model, glm::vec3(0.1f, 300.0f, 400.0f));
+
+    glUniformMatrix4fv(shader->GetUniformLocation("model"), 1, GL_FALSE, glm::value_ptr(model));
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glDepthMask(GL_FALSE);
+
+    g_Aurora->RenderMesh();
+
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
 }
 
 // ------------------------------------------------------------
@@ -142,10 +198,10 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
     // ============================================================
     struct MountainSpot { glm::vec3 pos; float scale; float rotY; };
     MountainSpot mountains[] = {
-        { glm::vec3(-17.0f, 0.0f, -30.0f), 6.0f, 180.0f },
-        { glm::vec3(-17.0f, 0.0f, -20.0f), 6.5f, 160.0f },
-        { glm::vec3(-17.0f, 0.0f, -10.0f), 6.2f, 200.0f },
-        { glm::vec3(-17.0f, 0.0f,   0.0f), 6.0f, 180.0f },
+        { glm::vec3(-25.0f, 0.0f, -30.0f), 7.5f, 180.0f },
+        { glm::vec3(-25.0f, 0.0f, -20.0f), 8.0f, 160.0f },
+        { glm::vec3(-25.0f, 0.0f, -10.0f), 7.7f, 200.0f },
+        { glm::vec3(-25.0f, 0.0f,   0.0f), 7.5f, 180.0f },
     };
 
     for (const auto& m : mountains)
@@ -199,6 +255,58 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         }
     }
 
+	// ============================================================
+    // ต้นไม้ — ใช้ฟังก์ชันช่วยเพื่อไม่ให้โค้ดยาว
+    // ============================================================
+    auto renderTreePart = [&](Mesh* mesh, GLuint colorTex,
+                              const glm::vec3& pos, float scale, float rotY)
+    {
+        if (!mesh) return;
+
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, colorTex);
+        glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
+        glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_DefaultRough);
+        glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, g_DefaultNorm);
+
+        glUniform1i(shader->GetUniformLocation("texture_albedo"),    0);
+        glUniform1i(shader->GetUniformLocation("texture_metallic"),  1);
+        glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
+        glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
+        glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, pos);
+        model = glm::rotate(model, glm::radians(rotY), glm::vec3(0, 1, 0));
+        model = glm::scale(model, glm::vec3(scale));
+
+        glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+        mesh->RenderMesh();
+    };
+
+
+    // ============================================================
+    // ต้นไม้ — เรียงหนาแน่นจาก z = -1 ถึง -14
+    // ============================================================
+    const float zStart = -1.0f;
+    const float zEnd   = -14.0f;
+    const float step   = 0.25f;     // ระยะระหว่างต้น (0.2 - 0.3)
+
+    for (float z = zStart; z >= zEnd; z -= step)
+    {
+        // สุ่มแบบ deterministic (ตำแหน่งจะไม่เปลี่ยนทุกเฟรม)
+        float xOff = sinf(z * 7.3f) * 0.25f;                        // x: 6.0 - 7.0
+        float scl  = 0.038f + (sinf(z * 3.1f) * 0.5f + 0.5f) * 0.012f; // 0.038 - 0.050
+        float rotY = fmodf(z * 137.5f, 360.0f);                    // หมุนกระจาย
+        if (rotY < 0.0f) rotY += 360.0f;
+
+        glm::vec3 pos = glm::vec3((-6.5f + xOff), 0.0f, z);
+
+        renderTreePart(g_Tree1Brown, g_TreeBrownColor, pos, scl, rotY);
+        renderTreePart(g_Tree1Green, g_TreeGreenColor, pos, scl, rotY);
+        renderTreePart(g_Tree1White, g_TreeWhiteColor, pos, scl, rotY);
+    }
+
     // ============ RV ============
     if (g_RV && g_RVTex)
     {
@@ -214,8 +322,8 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
         glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
 
-        // ⭐ tint สีรถ — เปลี่ยนสีได้ตรงนี้
-        glm::vec3 rvTint = glm::vec3(1.0f, 0.3f, 0.3f);   // ขาว = ไม่เปลี่ยนสี
+        // tint สีรถ — เปลี่ยนสีได้ตรงนี้
+        glm::vec3 rvTint = glm::vec3(1.0f, 1.0f, 1.0f);   // ขาว = ไม่เปลี่ยนสี
         glUniform3fv(shader->GetUniformLocation("tintColor"), 1, glm::value_ptr(rvTint));
 
         glm::mat4 model = glm::mat4(1.0f);

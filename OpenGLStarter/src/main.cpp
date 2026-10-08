@@ -31,34 +31,25 @@ std::vector<GLuint>  textureList;
 const std::filesystem::path shaderDirectory =
     std::filesystem::u8path(OPENGL_STARTER_SHADER_DIR);
 
-glm::vec3 lightColour = glm::vec3(1.0f, 1.0f, 1.0f);
+glm::vec3 lightColour = glm::vec3(0.15f, 0.15f, 0.25f);
 
-// ------------------------------------------------------------
-// Camera state
-// ------------------------------------------------------------
-glm::vec3 cameraPos   = glm::vec3(10.0f, 2.1f, -7.4f);
+// Camera
+glm::vec3 cameraPos   = glm::vec3(7.9f, 2.1f, -7.4f);
 float     yaw         = 178.0f;
 float     pitch       =  1.0f;
 float     fov         = 60.0f;
-bool      lookingBack = false;   // กด B toggle
+bool      lookingBack = false;
 
-// Mouse
 double lastX = WIDTH / 2.0;
 double lastY = HEIGHT / 2.0;
 const float MOUSE_SENSITIVITY = 0.15f;
-
-// Movement
 const float MOVE_SPEED = 3.0f;
 
-// ------------------------------------------------------------
-// Callbacks
 // ------------------------------------------------------------
 void KeyCallback(GLFWwindow* window, int key, int, int action, int)
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
-
-    // กด B คือ หันหลัง / กลับหน้าปกติ
     if (key == GLFW_KEY_B && action == GLFW_PRESS)
         lookingBack = !lookingBack;
 }
@@ -69,10 +60,8 @@ void MouseCallback(GLFWwindow*, double xpos, double ypos)
     float yoffset = (float)(lastY - ypos) * MOUSE_SENSITIVITY;
     lastX = xpos;
     lastY = ypos;
-
     yaw   += xoffset;
     pitch += yoffset;
-
     if (pitch >  89.0f) pitch =  89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
 }
@@ -85,8 +74,6 @@ void ScrollCallback(GLFWwindow*, double, double yoffset)
 }
 
 // ------------------------------------------------------------
-// Shaders
-// ------------------------------------------------------------
 void CreateShaders()
 {
     Shader* shader1 = new Shader();
@@ -95,6 +82,13 @@ void CreateShaders()
         shaderDirectory / "shader.frag"
     );
     shaderList.push_back(shader1);
+
+    Shader* auroraShader = new Shader();
+    auroraShader->CreateFromFiles(
+        shaderDirectory / "aurora.vert",
+        shaderDirectory / "aurora.frag"
+    );
+    shaderList.push_back(auroraShader);
 }
 
 void Cleanup()
@@ -109,8 +103,6 @@ void Cleanup()
     textureList.clear();
 }
 
-// ------------------------------------------------------------
-// Main
 // ------------------------------------------------------------
 int main()
 {
@@ -141,7 +133,7 @@ int main()
 
         glfwPollEvents();
 
-        // ---------- ทิศทางกล้อง (รองรับ B หันหลัง) ----------
+        // ---------- Direction from yaw/pitch ----------
         float displayYaw = lookingBack ? (yaw + 180.0f) : yaw;
 
         glm::vec3 cameraDirection;
@@ -152,7 +144,7 @@ int main()
 
         glm::vec3 cameraRight = glm::normalize(glm::cross(cameraDirection, worldUp));
 
-        // ---------- WASD + Space/Shift ----------
+        // ---------- WASD ----------
         glm::vec3 flatForward = glm::normalize(
             glm::vec3(cameraDirection.x, 0.0f, cameraDirection.z));
 
@@ -171,20 +163,23 @@ int main()
             cameraPos.y -= MOVE_SPEED * deltaTime;
 
         // ---------- Clear ----------
-        // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClearColor(1.0f, 0.0f, 1.0f, 1.0f); // pink
+        glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ---------- Shader + uniforms ----------
+        // ---------- Main shader ----------
         Shader* shader = shaderList[0];
         shader->UseShader();
+		glUniform1f(shader->GetUniformLocation("time"), currentTime);
+        // reset tintColor ที่ต้นเฟรม
+        glUniform3fv(shader->GetUniformLocation("tintColor"), 1,
+                     glm::value_ptr(glm::vec3(1.0f)));
 
         // Directional light
         glUniform3fv(shader->GetUniformLocation("dirLight.direction"), 1,
                      glm::value_ptr(glm::vec3(-0.5f, -1.0f, -0.3f)));
         glUniform3fv(shader->GetUniformLocation("dirLight.colour"), 1,
-                     glm::value_ptr(glm::vec3(1.0f, 0.98f, 0.95f)));
-        glUniform1f (shader->GetUniformLocation("dirLight.intensity"), 0.8f);
+             glm::value_ptr(glm::vec3(0.4f, 0.5f, 0.8f)));
+        glUniform1f (shader->GetUniformLocation("dirLight.intensity"), 0.15f);
 
         // Material
         glUniform1f(shader->GetUniformLocation("material.specularStrength"), 0.3f);
@@ -200,7 +195,7 @@ int main()
         glm::mat4 projection = glm::perspective(
             glm::radians(fov),
             (GLfloat)mainWindow.getBufferWidth() / (GLfloat)mainWindow.getBufferHeight(),
-            0.1f, 300.0f);
+            0.1f, 3000.0f);
 
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraDirection, worldUp);
 
@@ -211,31 +206,38 @@ int main()
         glUniform3fv(shader->GetUniformLocation("lightColour"), 1, (GLfloat*)&lightColour);
         glUniform3fv(shader->GetUniformLocation("viewPos"),     1, (GLfloat*)&cameraPos);
         glUniform1i (shader->GetUniformLocation("numPointLights"), NUM_POINT_LIGHTS);
+		 SetPointLight(shader, 0,
+                      glm::vec3(4.5f, 1.0f, -9.8f),           // ตำแหน่งกองไฟ
+                      glm::vec3(1.0f, 0.5f, 0.15f),           // สีส้มไฟ
+                      1.0f,                                    // constant
+                      0.14f,                                   // linear
+                      0.07f);                                  // quadratic
 
+        // Point Light — ดวงที่ 2 (แสงกระจายรอบๆ)
+        SetPointLight(shader, 1, glm::vec3(4.5f, 2.0f, -9.8f), glm::vec3(1.0f, 0.4f, 0.1f), 1.0f, 0.09f, 0.032f);
         // texture
         glUniform1i(shader->GetUniformLocation("texture2D"), 0);
         glActiveTexture(GL_TEXTURE0);
 
-		glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
-		
-        // Objects
+        // ---------- Objects ----------
         RenderCampScene(shader, uniformModel);
         RenderDeskScene(shader, uniformModel);
 
+        // Aurora — หลังสุด
+        RenderAurora(shaderList[1], view, projection);
+
         glUseProgram(0);
-		static float logTimer = 0.0f;
-		logTimer += deltaTime;
-		if (logTimer >= 0.5f)
-		{
-			logTimer = 0.0f;
-			std::cout << "Camera: ("
-					<< cameraPos.x << ", "
-					<< cameraPos.y << ", "
-					<< cameraPos.z << ")"
-					<< " | yaw=" << yaw
-					<< " pitch=" << pitch
-					<< std::endl;
-		}
+
+        static float logTimer = 0.0f;
+        logTimer += deltaTime;
+        if (logTimer >= 0.5f)
+        {
+            logTimer = 0.0f;
+            std::cout << "Camera: (" << cameraPos.x << ", "
+                      << cameraPos.y << ", " << cameraPos.z << ")"
+                      << " | yaw=" << yaw << " pitch=" << pitch << std::endl;
+        }
+
         mainWindow.swapBuffers();
     }
 
