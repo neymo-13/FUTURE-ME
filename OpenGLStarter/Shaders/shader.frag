@@ -15,6 +15,8 @@ uniform sampler2D texture_normal;
 uniform vec3 lightColour;
 uniform vec3 viewPos;
 
+uniform float emissiveStrength;   // 0 = ปกติ, 1 = เรืองแสงเต็มที่
+
 struct DirLight {
     vec3 direction;
     vec3 colour;
@@ -62,7 +64,6 @@ void main()
                     + pointLights[i].linear    * distance
                     + pointLights[i].quadratic * distance * distance;
 
-        // กันหารด้วย 0
         float attenuation = 1.0 / max(denom, 0.0001);
 
         pointSum += albedo * pointLights[i].colour * diffP * attenuation;
@@ -71,11 +72,16 @@ void main()
     // ---------- Ambient ----------
     vec3 ambient = lightColour * albedo * material_ao;
 
-    // ---------- รวม ----------
+    // ---------- รวมแสง ----------
     vec3 result = ambient + diffuse + pointSum;
 
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
+
+    // ---------- Emissive (สำหรับกองไฟ) ----------
+    // emissiveStrength = 0 → ใช้สีปกติ
+    // emissiveStrength = 1 → ใช้สี texture ดิบ (เรืองแสง)
+    result = mix(result, albedo, emissiveStrength);
 
     colour = vec4(result, 1.0);
 }

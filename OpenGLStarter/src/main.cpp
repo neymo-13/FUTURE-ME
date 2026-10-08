@@ -216,6 +216,8 @@ int main()
         glUniform1i(shader->GetUniformLocation("texture2D"), 0);
         glActiveTexture(GL_TEXTURE0);
 
+		glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
+		
         // Objects
         RenderCampScene(shader, uniformModel);
         RenderDeskScene(shader, uniformModel);

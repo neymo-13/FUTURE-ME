@@ -19,6 +19,9 @@ static GLuint g_ChairMetallic = 0;
 static GLuint g_ChairRough    = 0;
 static GLuint g_ChairNormal   = 0;
 
+static Mesh*  g_Fire    = nullptr;
+static GLuint g_FireTex = 0;
+
 // ------------------------------------------------------------
 // Default 1x1 textures (สำหรับ RV ที่ไม่ใช่ PBR)
 // ------------------------------------------------------------
@@ -67,6 +70,9 @@ void CreateCampScene()
     g_ChairRough    = LoadTexture("chair/chair_geo_chair_Roughness.png");
     g_ChairNormal   = LoadTexture("chair/chair_geo_chair_Normal.png");
 
+	    // --- กองไฟ ---
+    g_Fire    = LoadModelOrBox("fire_lowscale.obj");
+    g_FireTex = LoadTexture("fire/gltf_embedded_0.png");     // หรือ gltf_embedded_0.png
     std::cout << "[Camp] RV    mesh=" << g_RV << " tex=" << g_RVTex << "\n";
     std::cout << "[Camp] Chair albedo=" << g_ChairAlbedo
               << " metal="  << g_ChairMetallic
@@ -140,5 +146,32 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
 
         glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
         g_Chair->RenderMesh();
+    }
+	    // ============ กองไฟ (เรืองแสง) ============
+	if (g_Fire)
+	{
+		glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.8f);
+        // ผูก texture (ใช้ slot เดียวกับ RV)
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_FireTex);
+        glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
+        glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_DefaultRough);
+        glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, g_DefaultNorm);
+
+        glUniform1i(shader->GetUniformLocation("texture_albedo"),    0);
+        glUniform1i(shader->GetUniformLocation("texture_metallic"),  1);
+        glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
+        glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
+        glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(4.5f, 0.0f, -9.8f));   // หน้ารถ
+        model = glm::scale(model, glm::vec3(0.01f));                    // ปรับขนาด
+
+        glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+
+        g_Fire->RenderMesh();
+
+        // คืนค่า emissive = 0 หลังวาดเสร็จ
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
     }
 }
