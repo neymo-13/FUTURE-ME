@@ -6,7 +6,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <stb_image.h>   // implementation lives in SceneUtils.cpp
+
 #include <filesystem>
+#include <string>
 #include <vector>
 
 // Scene faces -X (camera forward), right of the image is -Z. Units are metres, ground y = 0.
@@ -27,6 +30,10 @@ const float FRAME_LEAN    = 12.0f;   // degrees
 const float FRAME_TURN    = 19.0f;   // degrees about Y, so it faces the seated camera
 const glm::vec3 SNOWMAN_POS = glm::vec3(5.86f, 0.0f, -6.0f);  // on the snow, left of the desk
 
+// RV is drawn by Person A at this position (CampScene.cpp, no rotation/scale); keep in sync
+const glm::vec3 RV_POS = glm::vec3(0.0f, 0.0f, -3.0f);
+const glm::vec3 RV_WINDOW_COLOUR = glm::vec3(1.0f, 0.78f, 0.45f);   // warm interior light
+
 // Models in Models/ are split per colour and scaled to metres, origin at bottom centre.
 struct Part
 {
@@ -45,6 +52,11 @@ static GLuint g_ScreenTex  = 0;
 static Mesh*  g_PhotoQuad  = nullptr;
 static GLuint g_PhotoTex   = 0;
 
+static std::vector<Mesh*> g_RVWindows;
+
+static Mesh*  g_WoodQuad = nullptr;
+static GLuint g_WoodTex  = 0;
+
 static bool HasFile(const char* dir, const char* name)
 {
     return std::filesystem::exists(std::filesystem::u8path(dir) / name);
@@ -55,6 +67,36 @@ static void AddPart(std::vector<Part>& parts, const char* name, glm::vec3 colour
 {
     if (HasFile(OPENGL_STARTER_MODEL_DIR, name))
         parts.push_back({ LoadModelOrBox(name), colour, emissive });
+}
+
+// Loads an image as an sRGB texture: OpenGL converts its colours to linear when sampled.
+// Needed for lit textures because the main shader gamma-corrects its output
+// (pow(result, 1/2.2)); a plain RGB texture would be brightened twice and look washed out.
+static GLuint LoadTextureSRGB(const char* name)
+{
+    const std::string path = (std::filesystem::u8path(OPENGL_STARTER_TEXTURE_DIR) / name).string();
+
+    stbi_set_flip_vertically_on_load(true);
+    int width, height, channels;
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, 3);
+    if (!data)
+        return LoadTexture(name);   // prints the missing file and falls back to white
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(data);
+
+    textureList.push_back(texture);
+    return texture;
 }
 
 // 1x1 white texture, coloured per part with tintColor
@@ -155,6 +197,38 @@ static Mesh* CreateFramePhoto()
                       glm::vec3(1.0f, 0.0f, 0.0f));
 }
 
+// Wood top laid on the table (the table model has no UVs, so it cannot take a texture itself).
+// Desk-local metres, 2 mm above the top surface. The grain (image vertical) runs along the
+// table's long side (Z, 1.71 m); image horizontal runs across its depth (X, 1.03 m).
+static Mesh* CreateTableTop()
+{
+    const float y     = TABLE_TOP_Y + 0.002f;
+    const float halfX = 0.51f, halfZ = 0.85f;
+
+    return CreateQuad(glm::vec3( halfX, y,  halfZ), glm::vec3(-halfX, y,  halfZ),
+                      glm::vec3(-halfX, y, -halfZ), glm::vec3( halfX, y, -halfZ),
+                      glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
+// Glowing panes for the 3 living-area windows on the RV's +X side (RV-local metres).
+// Sized to the glass inside each window frame (measured from a straight side view)
+// and placed just in front of that window's glass (x differs per window).
+static void CreateRVWindows()
+{
+    struct Window { float x, zNear, zFar, yBottom, yTop; };   // zNear = image-left (+Z) edge
+    const Window windows[] =
+    {
+        { 1.075f,  0.256f, -0.210f, 1.448f, 1.866f },   // middle window
+        { 1.110f, -0.495f, -0.837f, 1.362f, 1.685f },   // small window
+        { 1.110f, -1.417f, -2.453f, 1.267f, 1.942f },   // large rear window
+    };
+
+    for (const Window& w : windows)
+        g_RVWindows.push_back(CreateQuad(glm::vec3(w.x, w.yBottom, w.zNear), glm::vec3(w.x, w.yBottom, w.zFar),
+                                         glm::vec3(w.x, w.yTop,    w.zFar),  glm::vec3(w.x, w.yTop,    w.zNear),
+                                         glm::vec3(1.0f, 0.0f, 0.0f)));
+}
+
 void CreateDeskScene()
 {
     g_Box = CreateBox();
@@ -163,6 +237,9 @@ void CreateDeskScene()
     AddPart(g_Table, "table_top.obj",   glm::vec3(0.63f, 0.70f, 0.72f));
     // Light wood (the .mtl's dark brown 0.19,0.09,0.06 reflects almost no blue screen light)
     AddPart(g_Table, "table_frame.obj", glm::vec3(0.55f, 0.42f, 0.32f));
+
+    g_WoodQuad = CreateTableTop();
+    g_WoodTex  = LoadTextureSRGB("wood.jpg");
 
     // The model's own black screen is replaced by g_ScreenQuad
     AddPart(g_Laptop, "laptop_body.obj", glm::vec3(0.184f));
@@ -177,6 +254,8 @@ void CreateDeskScene()
 
     g_PhotoQuad = CreateFramePhoto();
     g_PhotoTex  = LoadTexture("frame_photo.jpg");
+
+    CreateRVWindows();
 
     AddPart(g_Snowman, "snowman_body.obj",   glm::vec3(1.0f));
     AddPart(g_Snowman, "snowman_dark.obj",   glm::vec3(0.06f, 0.10f, 0.13f));
@@ -193,6 +272,10 @@ static void RenderTable(Shader* shader, GLuint uniformModel)
     {
         // Model's long side is along X; turn it to run across the view (Z)
         DrawParts(shader, uniformModel, g_Table, glm::rotate(base, glm::radians(90.0f), glm::vec3(0, 1, 0)));
+
+        // Wood grain on top, lit normally (screen light shows on it)
+        SetSurface(shader, g_WoodTex, glm::vec3(1.0f), 0.0f);
+        Draw(g_WoodQuad, uniformModel, base);
         return;
     }
 
@@ -247,7 +330,7 @@ static void RenderMug(Shader* shader, GLuint uniformModel)
 // Standing photo frame: red panel + photo, leaning back on a stand behind it
 static void RenderFrame(Shader* shader, GLuint uniformModel)
 {
-    const glm::vec3 red = glm::vec3(0.95f, 0.3f, 0.3f);
+    const glm::vec3 red = glm::vec3(0.95f, 0.15f, 0.15f);
     const float lean = glm::radians(FRAME_LEAN);
 
     // base: on the table, turned to face the camera. Origin = bottom-front edge of the frame.
@@ -295,9 +378,23 @@ void SetDeskLights(Shader* shader)
     const glm::vec3 screenCentre = glm::vec3(-0.104f, 0.116f, 0.0f);
     const glm::vec3 lightPos = LAPTOP_POS + screenCentre + glm::vec3(0.15f, 0.0f, 0.0f);
 
-    // The shader has no light intensity, so the colour is scaled up instead (blue x 2.5)
-    const glm::vec3 screenBlue = glm::vec3(0.43f, 0.78f, 1.0f) * 2.5f;
+    // The shader has no light intensity, so the colour is scaled up instead (blue x 1.5)
+    const glm::vec3 screenBlue = glm::vec3(0.43f, 0.78f, 1.0f) * 1.5f;
     SetPointLight(shader, 2, lightPos, screenBlue, 1.0f, 0.35f, 0.44f);
+
+    // Warm light spilling out of the RV windows onto the snow beside it (pointLights[3]).
+    // There are no shadows, so it sits outside the wall rather than inside the RV,
+    // far enough out that it spreads over the snow instead of a hot spot on the wall.
+    const glm::vec3 rvLightPos = RV_POS + glm::vec3(2.3f, 1.2f, -1.0f);
+    SetPointLight(shader, 3, rvLightPos, RV_WINDOW_COLOUR * 1.5f, 1.0f, 0.35f, 0.44f);
+}
+
+static void RenderRVWindows(Shader* shader, GLuint uniformModel)
+{
+    SetSurface(shader, g_WhiteTex, RV_WINDOW_COLOUR, 1.0f);
+    glm::mat4 base = glm::translate(glm::mat4(1.0f), RV_POS);
+    for (Mesh* window : g_RVWindows)
+        Draw(window, uniformModel, base);
 }
 
 void RenderDeskScene(Shader* shader, GLuint uniformModel)
@@ -307,6 +404,7 @@ void RenderDeskScene(Shader* shader, GLuint uniformModel)
     RenderMug(shader, uniformModel);
     RenderFrame(shader, uniformModel);
     RenderSnowman(shader, uniformModel);
+    RenderRVWindows(shader, uniformModel);
 
     // leave shared uniforms as Person A expects them
     glUniform3fv(shader->GetUniformLocation("tintColor"), 1, glm::value_ptr(glm::vec3(1.0f)));

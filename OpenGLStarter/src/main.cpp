@@ -22,7 +22,7 @@
 const GLint WIDTH  = 800;
 const GLint HEIGHT = 600;
 
-const int NUM_POINT_LIGHTS = 3;   // 0-1 campfire (A), 2 laptop screen (B)
+const int NUM_POINT_LIGHTS = 4;   // 0-1 campfire (A), 2 laptop screen (B), 3 RV windows (B)
 
 std::vector<Mesh*>   meshList;
 std::vector<Shader*> shaderList;

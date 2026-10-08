@@ -9,7 +9,8 @@
 void CreateDeskScene();
 void RenderDeskScene(Shader* shader, GLuint uniformModel);
 
-// Person B's point lights (pointLights[2] = laptop screen). Call before drawing any scene.
+// Person B's point lights (pointLights[2] = laptop screen, [3] = RV windows).
+// Call before drawing any scene.
 void SetDeskLights(Shader* shader);
 
 #endif
