@@ -200,7 +200,7 @@ int main()
         glm::mat4 projection = glm::perspective(
             glm::radians(fov),
             (GLfloat)mainWindow.getBufferWidth() / (GLfloat)mainWindow.getBufferHeight(),
-            0.1f, 200.0f);
+            0.1f, 300.0f);
 
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraDirection, worldUp);
 

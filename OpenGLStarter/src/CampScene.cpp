@@ -8,7 +8,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 // ------------------------------------------------------------
-// Objects + Textures (ของจริง)
+// Objects + Textures
 // ------------------------------------------------------------
 static Mesh*  g_RV    = nullptr;
 static GLuint g_RVTex = 0;
@@ -22,14 +22,19 @@ static GLuint g_ChairNormal   = 0;
 static Mesh*  g_Fire    = nullptr;
 static GLuint g_FireTex = 0;
 
-// ------------------------------------------------------------
-// Default 1x1 textures (สำหรับ RV ที่ไม่ใช่ PBR)
-// ------------------------------------------------------------
-static GLuint g_DefaultMetal = 0;   // (0,0,0)   = ไม่โลหะ
-static GLuint g_DefaultRough = 0;   // (128,...) = หยาบกลาง
-static GLuint g_DefaultNorm  = 0;   // (128,128,255) = normal ราบ
+// --- ภูเขา 2 ชิ้น ---
+static Mesh*  g_MountainRock = nullptr;
+static Mesh*  g_MountainSnow = nullptr;
+static GLuint g_MountainRockColor = 0;
+static GLuint g_MountainSnowColor = 0;
 
-// สร้าง texture 1x1
+// ------------------------------------------------------------
+// Default 1x1 textures
+// ------------------------------------------------------------
+static GLuint g_DefaultMetal = 0;
+static GLuint g_DefaultRough = 0;
+static GLuint g_DefaultNorm  = 0;
+
 static GLuint Make1x1Texture(unsigned char r, unsigned char g, unsigned char b)
 {
     GLuint t = 0;
@@ -53,31 +58,41 @@ static GLuint Make1x1Texture(unsigned char r, unsigned char g, unsigned char b)
 // ------------------------------------------------------------
 void CreateCampScene()
 {
-    // --- Default 1x1 textures ---
+    // --- Default 1x1 ---
     g_DefaultMetal = Make1x1Texture(  0,   0,   0);
     g_DefaultRough = Make1x1Texture(128, 128, 128);
     g_DefaultNorm  = Make1x1Texture(128, 128, 255);
+
+    // --- สีภูเขา ---
+    g_MountainRockColor = Make1x1Texture(32, 31, 29);
+    g_MountainSnowColor = Make1x1Texture(240, 240, 245);
 
     // --- RV ---
     g_RV    = LoadModelOrBox("rv3.obj");
     g_RVTex = LoadTexture("rv3.png");
 
-    // --- เก้าอี้ PBR 4 texture ---
-    g_Chair = LoadModelOrBox("chair.obj");   // ← ชื่อไฟล์ obj ของเธอ
-
+    // --- เก้าอี้ ---
+    g_Chair         = LoadModelOrBox("chair.obj");
     g_ChairAlbedo   = LoadTexture("chair/chair_geo_chair_BaseColor.png");
     g_ChairMetallic = LoadTexture("chair/chair_geo_chair_Metallic.png");
     g_ChairRough    = LoadTexture("chair/chair_geo_chair_Roughness.png");
     g_ChairNormal   = LoadTexture("chair/chair_geo_chair_Normal.png");
 
-	    // --- กองไฟ ---
+    // --- กองไฟ ---
     g_Fire    = LoadModelOrBox("fire_lowscale.obj");
-    g_FireTex = LoadTexture("fire/gltf_embedded_0.png");     // หรือ gltf_embedded_0.png
-    std::cout << "[Camp] RV    mesh=" << g_RV << " tex=" << g_RVTex << "\n";
+    g_FireTex = LoadTexture("fire/gltf_embedded_0.png");
+
+    // --- ภูเขา 2 ชิ้น ---
+    g_MountainRock = LoadModelOrBox("mountain_rock.obj");
+    g_MountainSnow = LoadModelOrBox("mountain_snow.obj");
+
+    std::cout << "[Camp] RV    mesh=" << g_RV    << " tex=" << g_RVTex << "\n";
     std::cout << "[Camp] Chair albedo=" << g_ChairAlbedo
               << " metal="  << g_ChairMetallic
               << " rough="  << g_ChairRough
-              << " normal=" << g_ChairNormal << std::endl;
+              << " normal=" << g_ChairNormal << "\n";
+    std::cout << "[Camp] Mountain rock=" << g_MountainRock
+              << " snow=" << g_MountainSnow << std::endl;
 }
 
 // ------------------------------------------------------------
@@ -86,8 +101,68 @@ void CreateCampScene()
 void RenderCampScene(Shader* shader, GLuint uniformModel)
 {
     // ============================================================
-    // RV — ใช้ PBR เหมือนกัน แต่ metallic/rough/normal เป็น default 1x1
+    // เทือกเขา 4 ลูก
     // ============================================================
+    struct MountainSpot { glm::vec3 pos; float scale; float rotY; };
+    MountainSpot mountains[] = {
+        { glm::vec3(-17.0f, 0.0f, -30.0f), 6.0f, 180.0f },   // 1 (ซ้ายสุด)
+        { glm::vec3(-17.0f, 0.0f, -20.0f), 6.5f, 160.0f },   // 2
+        { glm::vec3(-17.0f, 0.0f, -10.0f), 6.2f, 200.0f },   // 3
+        { glm::vec3(-17.0f, 0.0f,   0.0f), 6.0f, 180.0f },   // 4 (ขวาสุด)
+    };
+
+    for (const auto& m : mountains)
+    {
+        // ---- หิน ----
+        if (g_MountainRock)
+        {
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_MountainRockColor);
+            glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
+            glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_DefaultRough);
+            glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, g_DefaultNorm);
+
+            glUniform1i(shader->GetUniformLocation("texture_albedo"),    0);
+            glUniform1i(shader->GetUniformLocation("texture_metallic"),  1);
+            glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
+            glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
+            glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+            glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, m.pos);
+            model = glm::rotate(model, glm::radians(m.rotY), glm::vec3(0, 1, 0));
+            model = glm::scale(model, glm::vec3(m.scale));
+
+            glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+            g_MountainRock->RenderMesh();
+        }
+
+        // ---- หิมะ (ตำแหน่งเดียวกับหิน) ----
+        if (g_MountainSnow)
+        {
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_MountainSnowColor);
+            glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
+            glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_DefaultRough);
+            glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, g_DefaultNorm);
+
+            glUniform1i(shader->GetUniformLocation("texture_albedo"),    0);
+            glUniform1i(shader->GetUniformLocation("texture_metallic"),  1);
+            glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
+            glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
+            glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+            glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, m.pos);
+            model = glm::rotate(model, glm::radians(m.rotY), glm::vec3(0, 1, 0));
+            model = glm::scale(model, glm::vec3(m.scale));
+
+            glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+            g_MountainSnow->RenderMesh();
+        }
+    }
+
+    // ============ RV ============
     if (g_RV && g_RVTex)
     {
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_RVTex);
@@ -100,6 +175,7 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
         glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
         glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, -3.0f));
@@ -108,9 +184,7 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         g_RV->RenderMesh();
     }
 
-    // ============================================================
-    // เก้าอี้ — ตัวที่ 1 (ซ้าย)
-    // ============================================================
+    // ============ เก้าอี้ (2 ตัว) ============
     if (g_Chair)
     {
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_ChairAlbedo);
@@ -123,35 +197,29 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
         glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
         glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
 
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3( 3.0f, 0.0f, -8.5f));
-        model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(0.05f));
+        struct ChairSpot { glm::vec3 pos; float rotY; };
+        ChairSpot chairs[] = {
+            { glm::vec3( 3.0f, 0.0f,  -8.5f),  45.0f },
+            { glm::vec3( 3.0f, 0.0f, -11.0f), -45.0f },
+        };
 
-        glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
-        g_Chair->RenderMesh();
+        for (const auto& c : chairs)
+        {
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, c.pos);
+            model = glm::rotate(model, glm::radians(c.rotY), glm::vec3(0, 1, 0));
+            model = glm::scale(model, glm::vec3(0.05f));
+
+            glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+            g_Chair->RenderMesh();
+        }
     }
 
-    // ============================================================
-    // เก้าอี้ — ตัวที่ 2 (ขวา)
-    // ============================================================
-    if (g_Chair)
+    // ============ กองไฟ ============
+    if (g_Fire)
     {
-        // texture ยังผูกอยู่จากตัวแรก ไม่ต้อง bind ซ้ำ
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(3.0f, 0.0f, -11.0f));
-        model = glm::rotate(model, glm::radians(-45.0f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(0.05f));
-
-        glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
-        g_Chair->RenderMesh();
-    }
-	    // ============ กองไฟ (เรืองแสง) ============
-	if (g_Fire)
-	{
-		glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.8f);
-        // ผูก texture (ใช้ slot เดียวกับ RV)
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_FireTex);
         glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
         glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_DefaultRough);
@@ -163,15 +231,15 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
         glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
 
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.8f);
+
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(4.5f, 0.0f, -9.8f));   // หน้ารถ
-        model = glm::scale(model, glm::vec3(0.01f));                    // ปรับขนาด
+        model = glm::translate(model, glm::vec3(4.5f, 0.0f, -9.8f));
+        model = glm::scale(model, glm::vec3(0.01f));
 
         glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
-
         g_Fire->RenderMesh();
 
-        // คืนค่า emissive = 0 หลังวาดเสร็จ
         glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
     }
 }
