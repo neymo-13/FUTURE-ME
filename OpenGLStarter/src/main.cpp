@@ -36,11 +36,11 @@ glm::vec3 lightColour = glm::vec3(1.0f, 1.0f, 1.0f);
 // ------------------------------------------------------------
 // Camera state
 // ------------------------------------------------------------
-glm::vec3 cameraPos   = glm::vec3(0.0f, 1.22f, 0.85f);
-float     yaw         = -90.0f;
-float     pitch       =  0.0f;
+glm::vec3 cameraPos   = glm::vec3(10.0f, 2.1f, -7.4f);
+float     yaw         = 178.0f;
+float     pitch       =  1.0f;
 float     fov         = 60.0f;
-bool      lookingBack = false;   // ⭐ กด B toggle
+bool      lookingBack = false;   // กด B toggle
 
 // Mouse
 double lastX = WIDTH / 2.0;
@@ -58,7 +58,7 @@ void KeyCallback(GLFWwindow* window, int key, int, int action, int)
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 
-    // ⭐ กด B → หันหลัง / กลับหน้าปกติ
+    // กด B คือ หันหลัง / กลับหน้าปกติ
     if (key == GLFW_KEY_B && action == GLFW_PRESS)
         lookingBack = !lookingBack;
 }
@@ -171,7 +171,8 @@ int main()
             cameraPos.y -= MOVE_SPEED * deltaTime;
 
         // ---------- Clear ----------
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClearColor(1.0f, 0.0f, 1.0f, 1.0f); // pink
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // ---------- Shader + uniforms ----------
@@ -220,6 +221,19 @@ int main()
         RenderDeskScene(shader, uniformModel);
 
         glUseProgram(0);
+		static float logTimer = 0.0f;
+		logTimer += deltaTime;
+		if (logTimer >= 0.5f)
+		{
+			logTimer = 0.0f;
+			std::cout << "Camera: ("
+					<< cameraPos.x << ", "
+					<< cameraPos.y << ", "
+					<< cameraPos.z << ")"
+					<< " | yaw=" << yaw
+					<< " pitch=" << pitch
+					<< std::endl;
+		}
         mainWindow.swapBuffers();
     }
 

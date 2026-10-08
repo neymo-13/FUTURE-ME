@@ -7,82 +7,75 @@ in vec3 FragPos;
 
 out vec4 colour;
 
-struct Material
-{
-    float specularStrength;
-    float shininess;
-};
+uniform sampler2D texture_albedo;
+uniform sampler2D texture_metallic;
+uniform sampler2D texture_roughness;
+uniform sampler2D texture_normal;
 
-struct PointLight
-{
+uniform vec3 lightColour;
+uniform vec3 viewPos;
+
+struct DirLight {
+    vec3 direction;
+    vec3 colour;
+    float intensity;
+};
+uniform DirLight dirLight;
+
+struct PointLight {
     vec3 position;
     vec3 colour;
     float constant;
     float linear;
     float quadratic;
 };
-
-struct DirLight
-{
-    vec3 direction;
-    vec3 colour;
-    float intensity;
-};
-
-uniform vec3 lightColour;
-uniform vec3 viewPos;
-
-uniform Material material;
-uniform float emissiveStrength;   // 0 = normal, 1 = full glow (texture colour as-is)
-
 uniform PointLight pointLights[4];
 uniform int numPointLights;
-uniform DirLight dirLight;
 
-uniform sampler2D texture2D;
-
-vec3 ambientLight()
-{
-    float ambientStrength = 0.5f;
-    vec3 ambient = lightColour * ambientStrength;
-
-    return ambient;
-}
-
-// Person A
-vec3 CalcDirLight(DirLight light, vec3 norm, vec3 viewDir)
-{
-    return vec3(0.0);
-}
-
-// Person B
-vec3 CalcPointLight(PointLight light, vec3 norm, vec3 fragPos, vec3 viewDir)
-{
-    return vec3(0.0);
-}
+uniform float material_ao;
 
 void main()
 {
-    vec3 norm    = normalize(Normal);
-    vec3 viewDir = normalize(viewPos - FragPos);
+    // ---------- Sample textures ----------
+    vec3  albedo    = texture(texture_albedo,    TexCoord).rgb;
+    float metallic  = texture(texture_metallic,  TexCoord).r;
+    float roughness = texture(texture_roughness, TexCoord).r;
 
-    // รวมแสง
-    vec3 lighting = ambientLight() + CalcDirLight(dirLight, norm, viewDir);
+    vec3 N = normalize(Normal);
+    vec3 V = normalize(viewPos - FragPos);
+
+    // ---------- Directional light (Lambert) ----------
+    vec3 L = normalize(-dirLight.direction);
+    float diff = max(dot(N, L), 0.0);
+    vec3 diffuse = albedo * dirLight.colour * dirLight.intensity * diff;
+
+    // ---------- Point lights (Lambert + attenuation) ----------
+    vec3 pointSum = vec3(0.0);
     for (int i = 0; i < numPointLights && i < 4; i++)
-        lighting += CalcPointLight(pointLights[i], norm, FragPos, viewDir);
+    {
+        vec3  toLight  = pointLights[i].position - FragPos;
+        float distance = length(toLight);
+        vec3  Lp       = toLight / max(distance, 0.0001);
+        float diffP    = max(dot(N, Lp), 0.0);
 
-    // Texture (แปลง sRGB → linear เพื่อ gamma correction)
-    vec4 texColour = texture(texture2D, TexCoord);
-    vec3 texLinear = pow(texColour.rgb, vec3(2.2));
+        float denom = pointLights[i].constant
+                    + pointLights[i].linear    * distance
+                    + pointLights[i].quadratic * distance * distance;
 
-    // ผลลัพธ์
-    vec3 result = texLinear * lighting;
+        // กันหารด้วย 0
+        float attenuation = 1.0 / max(denom, 0.0001);
 
-    // แปลงกลับ linear → sRGB
+        pointSum += albedo * pointLights[i].colour * diffP * attenuation;
+    }
+
+    // ---------- Ambient ----------
+    vec3 ambient = lightColour * albedo * material_ao;
+
+    // ---------- รวม ----------
+    vec3 result = ambient + diffuse + pointSum;
+
+    // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
 
-    // ถ้า emissiveStrength > 0 ให้ผสมกับสี texture ตรงๆ (glow)
-    result = mix(result, texColour.rgb, emissiveStrength);
-
-    colour = vec4(result, texColour.a);
+    colour = vec4(result, 1.0);
 }
