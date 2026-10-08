@@ -7,40 +7,42 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <filesystem>
+#include <vector>
 
 // Scene faces -X (camera forward), right of the image is -Z. Units are metres, ground y = 0.
 // Move DESK_POS to move the whole desk set; other positions are offsets from it.
-const float TABLE_TOP_Y = 0.74f;
-const glm::vec3 DESK_POS      = glm::vec3(4.6f, 0.0f, -6.9f);
-const glm::vec3 TABLE_CENTER  = DESK_POS + glm::vec3( 0.0f,  TABLE_TOP_Y,  0.0f);
-const glm::vec3 LAPTOP_POS    = DESK_POS + glm::vec3(-0.05f, TABLE_TOP_Y,  0.25f);
-const glm::vec3 MUG_POS       = DESK_POS + glm::vec3( 0.0f,  TABLE_TOP_Y, -0.3f);
-const glm::vec3 FLOWERPOT_POS = DESK_POS + glm::vec3(-0.35f, TABLE_TOP_Y,  0.6f);
-const float LID_TILT_DEG = 12.0f;
+const float TABLE_TOP_Y = 0.78f;    // top surface of the table model
+const glm::vec3 DESK_POS   = glm::vec3(4.6f, 0.0f, -6.9f);
+const glm::vec3 LAPTOP_POS = DESK_POS + glm::vec3(-0.05f, TABLE_TOP_Y,  0.25f);
+const glm::vec3 MUG_POS    = DESK_POS + glm::vec3( 0.0f,  TABLE_TOP_Y, -0.3f);
+const glm::vec3 TABLET_POS = DESK_POS + glm::vec3(-0.3f,  TABLE_TOP_Y,  0.6f);
 
-static Mesh* g_Box = nullptr;
+// Models in Models/ are split per colour and scaled to metres, origin at bottom centre.
+struct Part
+{
+    Mesh* mesh;
+    glm::vec3 colour;     // from the model's .mtl
+    float emissive;
+};
 
-// nullptr = .obj missing, draw boxes instead
-static Mesh* g_TableObj     = nullptr;
-static Mesh* g_LaptopObj    = nullptr;
-static Mesh* g_MugObj       = nullptr;
-static Mesh* g_FlowerpotObj = nullptr;
+static std::vector<Part> g_Table, g_Laptop, g_Mug, g_Tablet;
 
-static GLuint g_WoodTex  = 0;
+static Mesh*  g_Box      = nullptr;
 static GLuint g_WhiteTex = 0;
-static bool   g_HasWood  = false;
 
 static bool HasFile(const char* dir, const char* name)
 {
     return std::filesystem::exists(std::filesystem::u8path(dir) / name);
 }
 
-static Mesh* LoadIfExists(const char* name)
+// Adds the part only if its .obj exists; an empty list means "draw boxes instead"
+static void AddPart(std::vector<Part>& parts, const char* name, glm::vec3 colour, float emissive = 0.0f)
 {
-    return HasFile(OPENGL_STARTER_MODEL_DIR, name) ? LoadModelOrBox(name) : nullptr;
+    if (HasFile(OPENGL_STARTER_MODEL_DIR, name))
+        parts.push_back({ LoadModelOrBox(name), colour, emissive });
 }
 
-// 1x1 white texture, coloured per object with tintColor
+// 1x1 white texture, coloured per part with tintColor
 static GLuint CreateWhiteTexture()
 {
     GLuint texture;
@@ -72,9 +74,20 @@ static void Draw(Mesh* mesh, GLuint uniformModel, const glm::mat4& model)
     mesh->RenderMesh();
 }
 
-// Unit box scaled to size, centred at center
-static void DrawBox(GLuint uniformModel, glm::mat4 base, glm::vec3 center, glm::vec3 size)
+static void DrawParts(Shader* shader, GLuint uniformModel, const std::vector<Part>& parts, const glm::mat4& model)
 {
+    for (const Part& p : parts)
+    {
+        SetSurface(shader, g_WhiteTex, p.colour, p.emissive);
+        Draw(p.mesh, uniformModel, model);
+    }
+}
+
+// Unit box scaled to size, centred at center (placeholder when a model is missing)
+static void DrawBox(Shader* shader, GLuint uniformModel, glm::mat4 base,
+                    glm::vec3 center, glm::vec3 size, glm::vec3 colour)
+{
+    SetSurface(shader, g_WhiteTex, colour, 0.0f);
     glm::mat4 model = glm::translate(base, center);
     model = glm::scale(model, size);
     Draw(g_Box, uniformModel, model);
@@ -83,88 +96,93 @@ static void DrawBox(GLuint uniformModel, glm::mat4 base, glm::vec3 center, glm::
 void CreateDeskScene()
 {
     g_Box = CreateBox();
-
-    g_TableObj     = LoadIfExists("table.obj");
-    g_LaptopObj    = LoadIfExists("laptop.obj");
-    g_MugObj       = LoadIfExists("mug.obj");
-    g_FlowerpotObj = LoadIfExists("flowerpot.obj");
-
-    g_HasWood  = HasFile(OPENGL_STARTER_TEXTURE_DIR, "wood.jpg");
-    g_WoodTex  = LoadTexture("wood.jpg");
     g_WhiteTex = CreateWhiteTexture();
+
+    AddPart(g_Table, "table_top.obj",   glm::vec3(0.63f, 0.70f, 0.72f));
+    AddPart(g_Table, "table_frame.obj", glm::vec3(0.19f, 0.09f, 0.06f));
+
+    // laptop_screen.obj is drawn for now; the code-screen quad replaces it in the next step
+    AddPart(g_Laptop, "laptop_body.obj",   glm::vec3(0.184f));
+    AddPart(g_Laptop, "laptop_keys.obj",   glm::vec3(0.04f));
+    AddPart(g_Laptop, "laptop_screen.obj", glm::vec3(0.008f));
+
+    AddPart(g_Mug, "mug_outer.obj",  glm::vec3(0.698f, 0.106f, 0.106f));
+    AddPart(g_Mug, "mug_inner.obj",  glm::vec3(0.588f));
+    AddPart(g_Mug, "mug_coffee.obj", glm::vec3(0.071f, 0.012f, 0.0f));
+
+    AddPart(g_Tablet, "tablet_body.obj",   glm::vec3(0.886f));
+    AddPart(g_Tablet, "tablet_back.obj",   glm::vec3(0.02f));
+    AddPart(g_Tablet, "tablet_screen.obj", glm::vec3(0.435f, 0.969f, 0.988f), 0.5f);
 }
 
-// Folding table: top board + 4 metal legs
 static void RenderTable(Shader* shader, GLuint uniformModel)
 {
-    glm::mat4 base = glm::translate(glm::mat4(1.0f), TABLE_CENTER);
+    glm::mat4 base = glm::translate(glm::mat4(1.0f), DESK_POS);
 
-    if (g_TableObj)
+    if (!g_Table.empty())
     {
-        SetSurface(shader, g_WoodTex, glm::vec3(1.0f), 0.0f);
-        Draw(g_TableObj, uniformModel, glm::translate(glm::mat4(1.0f), DESK_POS));
+        // Model's long side is along X; turn it to run across the view (Z)
+        DrawParts(shader, uniformModel, g_Table, glm::rotate(base, glm::radians(90.0f), glm::vec3(0, 1, 0)));
         return;
     }
 
-    glm::vec3 woodTint = g_HasWood ? glm::vec3(1.0f) : glm::vec3(0.55f, 0.38f, 0.22f);
-    SetSurface(shader, g_WoodTex, woodTint, 0.0f);
-    DrawBox(uniformModel, base, glm::vec3(0.0f, -0.02f, 0.0f), glm::vec3(1.0f, 0.04f, 1.7f));
-
-    SetSurface(shader, g_WhiteTex, glm::vec3(0.25f, 0.25f, 0.27f), 0.0f);
+    // Placeholder: top board + 4 legs
+    DrawBox(shader, uniformModel, base, glm::vec3(0.0f, TABLE_TOP_Y - 0.02f, 0.0f),
+            glm::vec3(1.0f, 0.04f, 1.7f), glm::vec3(0.55f, 0.38f, 0.22f));
     for (float x : { -0.44f, 0.44f })
         for (float z : { -0.79f, 0.79f })
-            DrawBox(uniformModel, base, glm::vec3(x, -TABLE_TOP_Y / 2.0f, z),
-                    glm::vec3(0.04f, TABLE_TOP_Y - 0.04f, 0.04f));
+            DrawBox(shader, uniformModel, base, glm::vec3(x, (TABLE_TOP_Y - 0.04f) / 2.0f, z),
+                    glm::vec3(0.04f, TABLE_TOP_Y - 0.04f, 0.04f), glm::vec3(0.25f, 0.25f, 0.27f));
 }
 
-// Laptop: base + lid hinged at the back edge, tilted back away from the camera
 static void RenderLaptop(Shader* shader, GLuint uniformModel)
 {
     glm::mat4 base = glm::translate(glm::mat4(1.0f), LAPTOP_POS);
 
-    if (g_LaptopObj)
+    // Model's screen already faces +X (towards the camera)
+    if (!g_Laptop.empty())
     {
-        SetSurface(shader, g_WhiteTex, glm::vec3(0.8f), 0.0f);
-        Draw(g_LaptopObj, uniformModel, base);
+        DrawParts(shader, uniformModel, g_Laptop, base);
         return;
     }
 
-    SetSurface(shader, g_WhiteTex, glm::vec3(0.18f, 0.18f, 0.2f), 0.0f);
-    DrawBox(uniformModel, base, glm::vec3(0.0f, 0.009f, 0.0f), glm::vec3(0.23f, 0.018f, 0.33f));
-
-    // Rotating about Z by +angle tips +Y towards -X (away from the camera)
+    // Placeholder: base + lid tilted back 12 degrees
+    DrawBox(shader, uniformModel, base, glm::vec3(0.0f, 0.009f, 0.0f),
+            glm::vec3(0.23f, 0.018f, 0.33f), glm::vec3(0.18f, 0.18f, 0.2f));
     glm::mat4 lid = glm::translate(base, glm::vec3(-0.115f, 0.018f, 0.0f));
-    lid = glm::rotate(lid, glm::radians(LID_TILT_DEG), glm::vec3(0.0f, 0.0f, 1.0f));
-    DrawBox(uniformModel, lid, glm::vec3(-0.004f, 0.11f, 0.0f), glm::vec3(0.008f, 0.22f, 0.33f));
+    lid = glm::rotate(lid, glm::radians(12.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    DrawBox(shader, uniformModel, lid, glm::vec3(-0.004f, 0.11f, 0.0f),
+            glm::vec3(0.008f, 0.22f, 0.33f), glm::vec3(0.18f, 0.18f, 0.2f));
 }
 
 static void RenderMug(Shader* shader, GLuint uniformModel)
 {
     glm::mat4 base = glm::translate(glm::mat4(1.0f), MUG_POS);
-    SetSurface(shader, g_WhiteTex, glm::vec3(0.75f, 0.2f, 0.18f), 0.0f);
 
-    if (g_MugObj)
-        Draw(g_MugObj, uniformModel, base);
-    else
-        DrawBox(uniformModel, base, glm::vec3(0.0f, 0.05f, 0.0f), glm::vec3(0.08f, 0.10f, 0.08f));
-}
-
-static void RenderFlowerpot(Shader* shader, GLuint uniformModel)
-{
-    glm::mat4 base = glm::translate(glm::mat4(1.0f), FLOWERPOT_POS);
-
-    if (g_FlowerpotObj)
+    if (!g_Mug.empty())
     {
-        SetSurface(shader, g_WhiteTex, glm::vec3(0.6f, 0.32f, 0.2f), 0.0f);
-        Draw(g_FlowerpotObj, uniformModel, base);
+        // Turn the handle (model -X) to the right and slightly towards the camera
+        DrawParts(shader, uniformModel, g_Mug, glm::rotate(base, glm::radians(-120.0f), glm::vec3(0, 1, 0)));
         return;
     }
 
-    SetSurface(shader, g_WhiteTex, glm::vec3(0.6f, 0.32f, 0.2f), 0.0f);
-    DrawBox(uniformModel, base, glm::vec3(0.0f, 0.065f, 0.0f), glm::vec3(0.14f, 0.13f, 0.14f));
+    DrawBox(shader, uniformModel, base, glm::vec3(0.0f, 0.05f, 0.0f),
+            glm::vec3(0.08f, 0.10f, 0.08f), glm::vec3(0.7f, 0.1f, 0.1f));
+}
 
-    SetSurface(shader, g_WhiteTex, glm::vec3(0.25f, 0.55f, 0.25f), 0.0f);
-    DrawBox(uniformModel, base, glm::vec3(0.0f, 0.2f, 0.0f), glm::vec3(0.12f, 0.14f, 0.12f));
+static void RenderTablet(Shader* shader, GLuint uniformModel)
+{
+    glm::mat4 base = glm::translate(glm::mat4(1.0f), TABLET_POS);
+    base = glm::rotate(base, glm::radians(20.0f), glm::vec3(0, 1, 0));
+
+    if (!g_Tablet.empty())
+    {
+        DrawParts(shader, uniformModel, g_Tablet, base);
+        return;
+    }
+
+    DrawBox(shader, uniformModel, base, glm::vec3(0.0f, 0.005f, 0.0f),
+            glm::vec3(0.215f, 0.01f, 0.25f), glm::vec3(0.1f));
 }
 
 void RenderDeskScene(Shader* shader, GLuint uniformModel)
@@ -172,7 +190,7 @@ void RenderDeskScene(Shader* shader, GLuint uniformModel)
     RenderTable(shader, uniformModel);
     RenderLaptop(shader, uniformModel);
     RenderMug(shader, uniformModel);
-    RenderFlowerpot(shader, uniformModel);
+    RenderTablet(shader, uniformModel);
 
     // leave shared uniforms as Person A expects them
     glUniform3fv(shader->GetUniformLocation("tintColor"), 1, glm::value_ptr(glm::vec3(1.0f)));
