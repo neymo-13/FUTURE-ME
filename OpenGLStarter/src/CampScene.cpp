@@ -28,6 +28,12 @@ static Mesh*  g_MountainSnow = nullptr;
 static GLuint g_MountainRockColor = 0;
 static GLuint g_MountainSnowColor = 0;
 
+// --- พื้นหิมะ ---
+static Mesh*  g_SnowGround  = nullptr;
+static GLuint g_SnowDiffuse = 0;
+static GLuint g_SnowRough   = 0;
+static GLuint g_SnowNormal  = 0;
+
 // ------------------------------------------------------------
 // Default 1x1 textures
 // ------------------------------------------------------------
@@ -79,12 +85,18 @@ void CreateCampScene()
     g_ChairNormal   = LoadTexture("chair/chair_geo_chair_Normal.png");
 
     // --- กองไฟ ---
-    g_Fire    = LoadModelOrBox("fire_lowscale.obj");
+    g_Fire    = LoadModelOrBox("fire.obj");
     g_FireTex = LoadTexture("fire/gltf_embedded_0.png");
 
     // --- ภูเขา 2 ชิ้น ---
     g_MountainRock = LoadModelOrBox("mountain_rock.obj");
     g_MountainSnow = LoadModelOrBox("mountain_snow.obj");
+
+    // --- พื้นหิมะ ---
+    g_SnowGround  = CreateBox();
+    g_SnowDiffuse = LoadTexture("snow/snow01_diffuse_4k.jpg");
+    g_SnowRough   = LoadTexture("snow/snow01_roughness_4k.jpg");
+    g_SnowNormal  = LoadTexture("snow/snow01_normal_4k.jpg");
 
     std::cout << "[Camp] RV    mesh=" << g_RV    << " tex=" << g_RVTex << "\n";
     std::cout << "[Camp] Chair albedo=" << g_ChairAlbedo
@@ -101,14 +113,39 @@ void CreateCampScene()
 void RenderCampScene(Shader* shader, GLuint uniformModel)
 {
     // ============================================================
+    // พื้นหิมะ — วาดบนสุด (ครั้งเดียว ไม่ซ้ำในลูป)
+    // ============================================================
+    if (g_SnowGround)
+    {
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, g_SnowDiffuse);
+        glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, g_DefaultMetal);
+        glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, g_SnowRough);
+        glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, g_SnowNormal);
+
+        glUniform1i(shader->GetUniformLocation("texture_albedo"),    0);
+        glUniform1i(shader->GetUniformLocation("texture_metallic"),  1);
+        glUniform1i(shader->GetUniformLocation("texture_roughness"), 2);
+        glUniform1i(shader->GetUniformLocation("texture_normal"),    3);
+        glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
+        glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
+        model = glm::scale(model, glm::vec3(200.0f, 0.1f, 200.0f));
+
+        glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
+        g_SnowGround->RenderMesh();
+    }
+
+    // ============================================================
     // เทือกเขา 4 ลูก
     // ============================================================
     struct MountainSpot { glm::vec3 pos; float scale; float rotY; };
     MountainSpot mountains[] = {
-        { glm::vec3(-17.0f, 0.0f, -30.0f), 6.0f, 180.0f },   // 1 (ซ้ายสุด)
-        { glm::vec3(-17.0f, 0.0f, -20.0f), 6.5f, 160.0f },   // 2
-        { glm::vec3(-17.0f, 0.0f, -10.0f), 6.2f, 200.0f },   // 3
-        { glm::vec3(-17.0f, 0.0f,   0.0f), 6.0f, 180.0f },   // 4 (ขวาสุด)
+        { glm::vec3(-17.0f, 0.0f, -30.0f), 6.0f, 180.0f },
+        { glm::vec3(-17.0f, 0.0f, -20.0f), 6.5f, 160.0f },
+        { glm::vec3(-17.0f, 0.0f, -10.0f), 6.2f, 200.0f },
+        { glm::vec3(-17.0f, 0.0f,   0.0f), 6.0f, 180.0f },
     };
 
     for (const auto& m : mountains)
@@ -177,11 +214,19 @@ void RenderCampScene(Shader* shader, GLuint uniformModel)
         glUniform1f(shader->GetUniformLocation("material_ao"), 1.0f);
         glUniform1f(shader->GetUniformLocation("emissiveStrength"), 0.0f);
 
+        // ⭐ tint สีรถ — เปลี่ยนสีได้ตรงนี้
+        glm::vec3 rvTint = glm::vec3(1.0f, 0.3f, 0.3f);   // ขาว = ไม่เปลี่ยนสี
+        glUniform3fv(shader->GetUniformLocation("tintColor"), 1, glm::value_ptr(rvTint));
+
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, -3.0f));
         glUniformMatrix4fv(uniformModel, 1, GL_FALSE, glm::value_ptr(model));
 
         g_RV->RenderMesh();
+
+        // reset tint
+        glUniform3fv(shader->GetUniformLocation("tintColor"), 1,
+                     glm::value_ptr(glm::vec3(1.0f)));
     }
 
     // ============ เก้าอี้ (2 ตัว) ============
